@@ -1,0 +1,111 @@
+#!/bin/bash
+
+function usage() {
+	echo "usage example: pgtc -s my_test_db_datadir"
+	echo ""
+	echo "Options:"
+	echo "  -h/--help  Usage"
+	echo "  -d/--datadir  Folder for initdb"
+	echo "  -s/--start  Launch the cluster"
+	echo "  -p/--port  Postgres port"
+	# TODO
+	echo "  -b/--binpath  Use the specified Postgres bin folder "
+	echo "  -r/--replica  Also create a streaming replica"
+	exit 0
+}
+
+function ensure_empty_folder {
+	if [ -d $1 ]; then
+		echo "folder $1 already exists!"
+		exit 1
+	fi
+	mkdir $1
+}
+
+if [ "$#" -eq 0 ]; then
+  usage
+fi
+
+while [ $# -gt 1 ]
+do
+key="$1"
+
+case $key in
+    -h|--help)
+    usage
+    ;;
+    -d|--datadir)
+    DATADIR="$2"
+    ensure_empty_folder $DATADIR
+    shift
+    ;;
+    -s|--start)
+    START=1
+    ;;
+    -b|--binpath)
+    BINPATH="$2"
+    shift
+    ;;
+    -r|--REPLICA)
+    REPLICA=1
+    ;;
+    -p|--port)
+    PORT="$2"
+    ;;    
+    -a|--alias)
+    ALIAS=1
+    ;;    
+    *)
+    echo "unknown option: $key"
+    ;;
+esac
+shift # past argument or value
+done
+
+if [ -n "$1" ]; then
+    DATADIR="$1"
+fi
+
+PORT=${PORT:-5433}
+# echo "START=$START PORT=$PORT ALIAS=$ALIAS BINPATH=$BINPATH REPLICA=$REPLICA"
+
+# for --replica option
+#wal_compression=on
+#wal_keep_segments=10
+#wal_level=hot_standby
+
+echo "running initdb..."
+initdb -D $DATADIR &>/dev/null
+if [ $? -ne 0 ]; then
+	echo "initdb failed"
+	exit 1
+fi
+ 
+OPTS=$(cat <<HERE
+port=${PORT}
+fsync=off
+unix_socket_directories='/tmp'
+logging_collector=on
+log_filename='postgresql.log'
+HERE
+)
+echo "$OPTS" >> $DATADIR/postgresql.conf
+echo ""
+echo "Configuration changes applied: "
+echo "$OPTS"
+echo ""
+
+if [ -n "$START" ]; then
+	echo "starting postgresql on port $PORT ..."
+	pg_ctl -D $DATADIR start &>/dev/null
+	if [ $? -ne 0 ]; then
+		echo "pg_ctl start failed"
+		exit 1
+	fi	
+	echo "Postgres cluster in folder '${DATADIR}', port ${PORT} started"
+fi
+
+echo ""
+echo "Postgres cluster setup in folder '${DATADIR}' finished"
+echo "Execute below to create aliases pgtc_stop/start/destroy_X"
+echo "\". pgtc_aliases $DATADIR\""

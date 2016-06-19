@@ -1,0 +1,16 @@
+DATADIR=$1
+
+if [ -d "$DATADIR" ]; then
+	# todo, start differentiating between DATADIR and INSTANCENAME
+
+	alias pgtc_${DATADIR}_log='less -nS ${DATADIR}/pg_log/postgresql.log'
+	alias pgtc_${DATADIR}_tail='tail ${DATADIR}/pg_log/postgresql.log'
+	alias pgtc_${DATADIR}_start='pg_ctl -D ${DATADIR} start'
+	alias pgtc_${DATADIR}_status='pg_ctl -D ${DATADIR} status'
+	alias pgtc_${DATADIR}_stop='pg_ctl -D ${DATADIR} stop'
+	alias pgtc_${DATADIR}_restart='pg_ctl -D ${DATADIR} restart'
+	echo "Aliases created:"
+	echo "  pgtc_${DATADIR}_[status|stop|start|restart|tail|log]"
+else
+	echo "Existing Postgres DATADIR expected as input!"
+fi
