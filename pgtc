@@ -46,11 +46,12 @@ case $key in
     BINPATH="$2"
     shift
     ;;
-    -r|--REPLICA)
+    -r|--replica)
     REPLICA=1
     ;;
     -p|--port)
     PORT="$2"
+    shift
     ;;    
     -a|--alias)
     ALIAS=1
