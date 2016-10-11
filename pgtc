@@ -8,9 +8,9 @@ function usage() {
 	echo "  -d/--datadir  Folder for initdb"
 	echo "  -s/--start  Launch the cluster"
 	echo "  -p/--port  Postgres port"
-	# TODO
-	echo "  -b/--binpath  Use the specified Postgres bin folder "
 	echo "  -r/--replica  Also create a streaming replica"
+    # TODO
+    echo "  -b/--binpath  Use the specified Postgres bin folder "
 	exit 0
 }
 
@@ -67,6 +67,10 @@ if [ -n "$1" ]; then
     DATADIR="$1"
 fi
 
+if [ -n $HELP ]; then
+  usage
+fi
+
 PORT=${PORT:-5433}
 # echo "START=$START PORT=$PORT ALIAS=$ALIAS BINPATH=$BINPATH REPLICA=$REPLICA"
 
@@ -88,6 +92,10 @@ fsync=off
 unix_socket_directories='/tmp'
 logging_collector=on
 log_filename='postgresql.log'
+max_wal_senders=2
+max_replication_slots=2
+wal_level=logical
+hot_standby=on
 HERE
 )
 echo "$OPTS" >> $DATADIR/postgresql.conf
@@ -96,6 +104,34 @@ echo "Configuration changes applied: "
 echo "$OPTS"
 echo ""
 
+
+if [ -n "$REPLICA" ]; then
+
+    echo "setting up a replica ..."
+
+    sed -ri 's/#([local|host].*replication)/\1/g' $DATADIR/pg_hba.conf
+
+    echo "starting master"
+    pg_ctl -D $DATADIR -w start &>/dev/null
+    echo "stopping master again"
+    pg_ctl -D $DATADIR -w stop &>/dev/null
+
+    # pg_basebackup -D "$DATADIR_repl" start &>/dev/null
+    echo "$DATADIR ${DATADIR}_repl"
+    cp -r $DATADIR ${DATADIR}_repl
+    if [ $? -ne 0 ]; then
+        echo "copying replica failed"
+        exit 1
+    fi
+    REPL_PORT=$((PORT+1))
+    echo "port=$REPL_PORT" >> ${DATADIR}_repl/postgresql.conf
+    echo "standby_mode=on" >> ${DATADIR}_repl/recovery.conf
+    echo "primary_conninfo='host=localhost port=${PORT} application_name=replica1'" >> ${DATADIR}_repl/recovery.conf
+    echo "replica in folder ${DATADIR}_repl with port $REPL_PORT created"
+fi
+
+
+
 if [ -n "$START" ]; then
 	echo "starting postgresql on port $PORT ..."
 	pg_ctl -D $DATADIR start &>/dev/null
@@ -103,7 +139,17 @@ if [ -n "$START" ]; then
 		echo "pg_ctl start failed"
 		exit 1
 	fi	
-	echo "Postgres cluster in folder '${DATADIR}', port ${PORT} started"
+    echo "Postgres cluster in folder '${DATADIR}', port ${PORT} started"
+
+    if [ -n "$REPLICA" ]; then
+        echo "starting replica on port $REPL_PORT ..."
+        pg_ctl -D ${DATADIR}_repl start &>/dev/null
+        if [ $? -ne 0 ]; then
+            echo "pg_ctl start failed"
+            exit 1
+        fi
+        echo "Postgres replica in folder '${DATADIR}_repl', port ${REPL_PORT} started"
+    fi
 fi
 
 echo ""
