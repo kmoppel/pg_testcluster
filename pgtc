@@ -67,9 +67,6 @@ if [ -n "$1" ]; then
     DATADIR="$1"
 fi
 
-if [ -n $HELP ]; then
-  usage
-fi
 
 PORT=${PORT:-5433}
 # echo "START=$START PORT=$PORT ALIAS=$ALIAS BINPATH=$BINPATH REPLICA=$REPLICA"
