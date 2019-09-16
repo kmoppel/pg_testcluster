@@ -9,8 +9,7 @@ function usage() {
 	echo "  -s/--start  Launch the cluster"
 	echo "  -p/--port  Postgres port"
 	echo "  -r/--replica  Also create a streaming replica"
-    echo "  -b/--binpath  Use the specified Postgres bin folder [with trailing slash!]"
-    echo "  -l/--logical  wal_level = logical"
+    echo "  -b/--binpath  Use the specified Postgres bin folder (default: /usr/lib/postgresql/11/bin/)"
 	exit 0
 }
 
@@ -43,7 +42,7 @@ case $key in
     START=1
     ;;
     -b|--binpath)
-    BINPATH="$2"
+    BINPATH="${2}/"
     shift
     ;;
     -r|--replica)
@@ -70,48 +69,35 @@ if [ -n "$1" ]; then
     DATADIR="$1"
 fi
 
+BINPATH=/usr/lib/postgresql/11/bin/
 PORT=${PORT:-5433}
-# echo "START=$START PORT=$PORT ALIAS=$ALIAS BINPATH=$BINPATH REPLICA=$REPLICA"
 
-# for --replica option
-#wal_compression=on
-#wal_keep_segments=10
-#wal_level=hot_standby
 
-echo "running initdb..."
-echo "${BINPATH}initdb -D $DATADIR &>/dev/null"
-${BINPATH}initdb -D $DATADIR &>/dev/null
+echo "running initdb with BINDIR $BINPATH ..."
+echo "*** using NON-PERSISTENT settings ***"
+
+${BINPATH}initdb --no-sync --auth-local=trust --auth-host=trust -D $DATADIR &>/dev/null
 if [ $? -ne 0 ]; then
 	echo "initdb failed"
 	exit 1
 fi
 
-if [ -n "$LOGICAL" ]; then
+
 OPTS=$(cat <<HERE
 port=${PORT}
 fsync=off
+full_page_writes=off
+wal_compression=on
 unix_socket_directories='/tmp'
 logging_collector=on
 log_filename='postgresql.log'
-max_wal_senders=3
-max_replication_slots=3
+max_wal_senders=10
+max_replication_slots=10
 wal_level=logical
 hot_standby=on
+cluster_name=pgtc_${PORT}
 HERE
 )
-else
-OPTS=$(cat <<HERE
-port=${PORT}
-fsync=off
-unix_socket_directories='/tmp'
-logging_collector=on
-log_filename='postgresql.log'
-max_wal_senders=3
-wal_level=hot_standby
-hot_standby=on
-HERE
-)
-fi
 
 echo "$OPTS" >> $DATADIR/postgresql.conf
 echo ""
@@ -173,12 +159,13 @@ echo ""
 echo "Execute below to create aliases pgtc_stop/start/destroy_X"
 echo "\". pgtc_aliases $DATADIR\""
 
-if [ -n "$BINPATH" ]; then
+if [ -n "$BINPATH" ] ; then
   echo ""
   echo "or"
   echo ""
   echo "${BINPATH}pg_ctl -D ${DATADIR} start"
-  if [ -n "$REPLICA" ]; then
+
+  if [ -n "$REPLICA" ] ; then
     echo "${BINPATH}pg_ctl -D ${DATADIR}_repl start"
   fi
 fi
