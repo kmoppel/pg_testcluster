@@ -10,6 +10,7 @@ function usage() {
 	echo "  -p/--port  Postgres port"
 	echo "  -r/--replica  Also create a streaming replica"
     echo "  -b/--binpath  Use the specified Postgres bin folder (default: /usr/lib/postgresql/11/bin/)"
+    echo "  -v/--version  Major version (default: 11)"
 	exit 0
 }
 
@@ -24,6 +25,10 @@ function ensure_empty_folder {
 if [ "$#" -eq 0 ]; then
   usage
 fi
+
+BINPATH=/usr/lib/postgresql/11/bin/
+VERSION=11  # important to specify for 12+ due to recovery.conf going away
+PORT=${PORT:-5433}
 
 while [ $# -gt 1 ]
 do
@@ -55,8 +60,9 @@ case $key in
     -a|--alias)
     ALIAS=1
     ;;
-    -l|--logical)
-    LOGICAL=1
+    -v|--version)
+    VERSION="$2"
+    shift
     ;;
     *)
     echo "unknown option: $key"
@@ -68,9 +74,6 @@ done
 if [ -n "$1" ]; then
     DATADIR="$1"
 fi
-
-BINPATH=/usr/lib/postgresql/11/bin/
-PORT=${PORT:-5433}
 
 
 echo "running initdb with BINDIR $BINPATH ..."
@@ -127,8 +130,14 @@ if [ -n "$REPLICA" ]; then
     REPL_PORT=$((PORT+1))
     echo "port=$REPL_PORT" >> ${DATADIR}_repl/postgresql.conf
     echo "cluster_name=pgtc_${REPL_PORT}" >> ${DATADIR}_repl/postgresql.conf
-    echo "standby_mode=on" >> ${DATADIR}_repl/recovery.conf
-    echo "primary_conninfo='host=localhost port=${PORT} application_name=replica1'" >> ${DATADIR}_repl/recovery.conf
+
+    if [ $VERSION -ge 12 ] ; then
+        touch ${DATADIR}_repl/standby.signal
+        echo "primary_conninfo='host=localhost port=${PORT} application_name=replica1'" >> ${DATADIR}_repl/postgresql.conf
+    else
+        echo "standby_mode=on" >> ${DATADIR}_repl/recovery.conf
+        echo "primary_conninfo='host=localhost port=${PORT} application_name=replica1'" >> ${DATADIR}_repl/recovery.conf
+    fi
     echo "replica in folder ${DATADIR}_repl with port $REPL_PORT created"
 fi
 
