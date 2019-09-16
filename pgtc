@@ -126,6 +126,7 @@ if [ -n "$REPLICA" ]; then
     fi
     REPL_PORT=$((PORT+1))
     echo "port=$REPL_PORT" >> ${DATADIR}_repl/postgresql.conf
+    echo "cluster_name=pgtc_${REPL_PORT}" >> ${DATADIR}_repl/postgresql.conf
     echo "standby_mode=on" >> ${DATADIR}_repl/recovery.conf
     echo "primary_conninfo='host=localhost port=${PORT} application_name=replica1'" >> ${DATADIR}_repl/recovery.conf
     echo "replica in folder ${DATADIR}_repl with port $REPL_PORT created"
