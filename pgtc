@@ -54,7 +54,10 @@ case $key in
     ;;    
     -a|--alias)
     ALIAS=1
-    ;;    
+    ;;
+    -l|--logical)
+    LOGICAL=1
+    ;;
     *)
     echo "unknown option: $key"
     ;;
@@ -68,21 +71,18 @@ fi
 
 BINPATH=/usr/lib/postgresql/11/bin/
 PORT=${PORT:-5433}
-# echo "START=$START PORT=$PORT ALIAS=$ALIAS BINPATH=$BINPATH REPLICA=$REPLICA"
 
-# for --replica option
-#wal_compression=on
-#wal_keep_segments=10
-#wal_level=hot_standby
 
 echo "running initdb with BINDIR $BINPATH ..."
 echo "*** using NON-PERSISTENT settings ***"
+
 ${BINPATH}initdb --no-sync --auth-local=trust --auth-host=trust -D $DATADIR &>/dev/null
 if [ $? -ne 0 ]; then
 	echo "initdb failed"
 	exit 1
 fi
- 
+
+
 OPTS=$(cat <<HERE
 port=${PORT}
 fsync=off
@@ -95,9 +95,10 @@ max_wal_senders=10
 max_replication_slots=10
 wal_level=logical
 hot_standby=on
-cluster_name=${DATADIR}
+cluster_name=pgtc_${PORT}
 HERE
 )
+
 echo "$OPTS" >> $DATADIR/postgresql.conf
 echo ""
 echo "Configuration changes applied: "
