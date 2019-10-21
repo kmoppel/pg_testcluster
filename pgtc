@@ -79,7 +79,7 @@ fi
 echo "running initdb with BINDIR $BINPATH ..."
 echo "*** using NON-PERSISTENT settings ***"
 
-${BINPATH}initdb --no-sync --auth-local=trust --auth-host=trust -D $DATADIR &>/dev/null
+${BINPATH}initdb --auth-local=trust --auth-host=trust -D $DATADIR &>/dev/null
 if [ $? -ne 0 ]; then
 	echo "initdb failed"
 	exit 1
@@ -127,7 +127,7 @@ if [ -n "$REPLICA" ]; then
         echo "copying replica failed"
         exit 1
     fi
-    REPL_PORT=$((PORT+1))
+    REPL_PORT=$((PORT+1000))
     echo "port=$REPL_PORT" >> ${DATADIR}_repl/postgresql.conf
     echo "cluster_name=pgtc_${REPL_PORT}" >> ${DATADIR}_repl/postgresql.conf
 
