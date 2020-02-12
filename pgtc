@@ -9,8 +9,9 @@ function usage() {
 	echo "  -s/--start  Launch the cluster"
 	echo "  -p/--port  Postgres port"
 	echo "  -r/--replica  Also create a streaming replica"
-    echo "  -b/--binpath  Use the specified Postgres bin folder (default: /usr/lib/postgresql/11/bin/)"
-    echo "  -v/--version  Major version (default: 11)"
+	echo "  -l/--logical  Also create a streaming replica"
+  echo "  -b/--binpath  Use the specified Postgres bin folder (default: /usr/lib/postgresql/11/bin/)"
+  echo "  -v/--version  Major version (default: 11)"
 	exit 0
 }
 
@@ -26,9 +27,11 @@ if [ "$#" -eq 0 ]; then
   usage
 fi
 
-BINPATH=/usr/lib/postgresql/11/bin/
-VERSION=11  # important to specify for 12+ due to recovery.conf going away
-PORT=${PORT:-5433}
+BINPATH=/usr/lib/postgresql/12/bin/
+VERSION=12  # important to specify for 12+ due to recovery.conf going away
+PORT=${PORT:-6432}
+export PGHOST=/tmp
+export PGDATABASE=postgres
 
 while [ $# -gt 1 ]
 do
@@ -57,8 +60,8 @@ case $key in
     PORT="$2"
     shift
     ;;    
-    -a|--alias)
-    ALIAS=1
+    -l|--logical)
+    LOGICAL=1
     ;;
     -v|--version)
     VERSION="$2"
@@ -109,9 +112,9 @@ echo "$OPTS"
 echo ""
 
 
-if [ -n "$REPLICA" ]; then
+if [ -n "$REPLICA" -a -z "$LOGICAL" ]; then
 
-    echo "setting up a replica ..."
+    echo "setting up a normal streaming replica ..."
 
     sed -ri 's/#([local|host].*replication)/\1/g' $DATADIR/pg_hba.conf
 
@@ -139,6 +142,52 @@ if [ -n "$REPLICA" ]; then
         echo "primary_conninfo='host=localhost port=${PORT} application_name=replica1'" >> ${DATADIR}_repl/recovery.conf
     fi
     echo "replica in folder ${DATADIR}_repl with port $REPL_PORT created"
+fi
+
+if [ -n "$REPLICA" -a -n "$LOGICAL" ]; then
+
+    echo "setting up a logical replication replica with pgbench schema ..."
+
+    sed -ri 's/#([local|host].*replication)/\1/g' $DATADIR/pg_hba.conf
+
+    echo "starting master"
+    ${BINPATH}pg_ctl -D $DATADIR -w start &>/dev/null
+
+    ${BINPATH}initdb --auth-local=trust --auth-host=trust -D ${DATADIR}_repl &>/dev/null
+    if [ $? -ne 0 ]; then
+      echo "replica initdb failed"
+      exit 1
+    fi
+
+    REPL_PORT=$((PORT+1000))
+    cp ${DATADIR}/postgresql.conf ${DATADIR}_repl/postgresql.conf
+    echo "port=$REPL_PORT" >> ${DATADIR}_repl/postgresql.conf
+    echo "cluster_name=pgtc_${REPL_PORT}" >> ${DATADIR}_repl/postgresql.conf
+
+    echo "starting logical replica"
+    ${BINPATH}pg_ctl -D ${DATADIR}_repl -w start &>/dev/null
+
+    echo "init master pgbench schema"
+    ${BINPATH}pgbench -i -p ${PORT} &>/dev/null
+
+    echo "sync schema to replica"
+    ${BINPATH}pg_dump -s -p ${PORT} ${PGDATABASE} | ${BINPATH}psql -p ${REPL_PORT} ${PGDATABASE} &>/dev/null
+
+    echo "set up pub-sub"
+    ${BINPATH}psql -p ${PORT} -d ${PGDATABASE} -c "create publication pub1 for all tables"
+    ${BINPATH}psql -p ${REPL_PORT} -d ${PGDATABASE} -c "create subscription sub1 connection 'port=${PORT} dbname=${PGDATABASE}' publication pub1"
+
+    echo "wating for snapshot to be pulled. sleep 20..."
+    sleep 20
+    OK=$(${BINPATH}psql -XAtq -p ${REPL_PORT} -d ${PGDATABASE} -c "select c = cr from (select count(*) c, count(*) filter (where srsubstate='r') cr from pg_subscription_rel) x;")
+    if [ "$OK" != "t" ]; then
+      echo "failed to set up pub-sub"
+      exit 1
+    fi
+
+    echo "replica in folder ${DATADIR}_repl with port $REPL_PORT created"
+    ${BINPATH}pg_ctl -D ${DATADIR} -w stop &>/dev/null
+    ${BINPATH}pg_ctl -D ${DATADIR}_repl -w stop &>/dev/null
 fi
 
 
